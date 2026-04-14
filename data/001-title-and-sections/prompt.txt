@@ -1,0 +1,6 @@
+Set the title to "Analysis of Hypothetical Theories of the Tundra" and scaffold out the following sections:
+- Introduction
+- Background
+- Problem statement
+- Methodology
+- Results and discussion

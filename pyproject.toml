@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "spartan-write-benchmark"
+version = "1.0.0"
+description = "Benchmark tooling and dataset runner for the Spartan-Write project."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "click>=8.3.1",
+    "dotenv>=0.9.9",
+    "requests>=2.32.5",
+    "streamlit>=1.54.0",
+]
+
+[project.scripts]
+benchmark = "core:cli.main"
+dashboard = "core.dashboard:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["core"]

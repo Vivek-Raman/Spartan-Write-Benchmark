@@ -1,0 +1,95 @@
+\section{Implementation}
+
+\subsection{Agent design}
+
+\subsubsection{System prompt}
+
+The agent operates under a comprehensive system prompt that defines its role as a \LaTeX\ assistant capable of understanding user requests and making intelligent document modifications.
+The prompt establishes clear guidelines for workflow (list files $\rightarrow$ read $\rightarrow$ edit $\rightarrow$ compile), file organization conventions, and safety principles (minimal changes, user-provided content only, no unsolicited additions).
+This prompt-based design ensures consistent, predictable behavior aligned with document integrity best practices.
+The complete system prompt can be found in Appendix \ref{apx:system-prompt}
+
+\subsubsection{Architecture}
+
+The agent is implemented as a LangGraph state machine with a deterministic execution graph \cite{langgraph}.
+It maintains state across multi-turn conversations, enabling the agent to reference prior context, track intermediate results, and make cumulative edits across multiple user interactions.
+The graph structure ensures reliable state transitions and supports checkpoint-based persistence for conversation recovery.
+
+\subsubsection{Tool suite}
+
+The agent has access to seven core tools:
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{|l|p{8cm}|}
+\hline
+\textbf{Tool name} & \textbf{Description} \\
+\hline
+\texttt{read\_file\_tool} & Read the contents of any file in the project directory \\
+\hline
+\texttt{edit\_file\_tool} & Create new files or modify existing files with complete content \\
+\hline
+\texttt{delete\_file\_tool} & Remove files from the project directory \\
+\hline
+\texttt{rename\_file\_tool} & Rename or move files within the project, updating all references \\
+\hline
+\texttt{list\_files\_tool} & Browse and list the project structure recursively or non-recursively \\
+\hline
+\texttt{compile\_latex\_tool} & Invoke LaTeX compilation and return status and error messages \\
+\hline
+\texttt{load\_attached\_image\_tool} & Manage image workflows by moving attached images into the figures directory \\
+\hline
+\end{tabular}
+\caption{Tools available to the agent}
+\label{tab:agent_tools}
+\end{table}
+
+\subsubsection{Tool invocation flow}
+
+When the agent decides to take an action, it invokes the appropriate tool and receives structured output (success/failure, file paths, error messages).
+Tool results are fed back into the agent loop, allowing it to respond to outcomes, handle errors, or request clarification from the user.
+This interactive loop enables iterative refinement and recovery from failures.
+
+\subsubsection{Compilation}
+
+The agent can invoke \texttt{compile\_latex\_tool} to verify that edits produce valid \LaTeX\ output.
+If compilation fails, error messages are captured and the agent can attempt fixes (e.g., correcting syntax errors, fixing citation references).
+However, the system enforces a limit on retry attempts (typically 3) within a single user request to prevent infinite loops and resource exhaustion.
+
+\subsubsection{Token usage metrics}
+
+Every agent interaction is tracked for token consumption, measuring the total number of tokens sent to and received from the language model.
+This metric provides insight into the computational cost of individual requests and enables billing, usage quotas, and performance analysis.
+Token counts are aggregated by user, model, and time period for reporting.
+
+\subsubsection{PostHog Analytics Integration}
+
+Every Agent interaction is sent to PostHog with structured metadata including user ID, model used, token count, tool invocations, conversation duration, and outcome (success/error). This enables real-time dashboards, cohort analysis, and long-term trend tracking. Analytics inform decisions about model selection, feature development, and infrastructure scaling.
+
+\subsubsection{Safety \& Integrity Constraints}
+
+The Agent is designed with built-in safety mechanisms: all file operations validate paths to prevent escaping the project directory, the prompt instructs the agent not to add unsolicited content, and compilation errors trigger error feedback rather than silent failures. These constraints ensure the Agent acts as a trusted collaborator rather than an autonomous modifier.
+
+\subsection{\LaTeX\ compilation}
+
+\subsection{Test suite}
+
+\subsubsection{Architecture}
+\subsubsection{Test design}
+
+\textbf{Tool Invocation Statistics}
+
+The benchmark tracks tool usage by counting the number of times each tool is invoked during a conversation.
+High tool invocation counts may indicate thorough exploration (positive) or inefficient looping (negative), depending on context.
+Tool usage patterns reveal agent reasoning depth and can highlight opportunities for better prompting or tool design.
+
+\subsection{User interface}
+
+\subsubsection{Sign-in page}
+\subsubsection{New project page}
+\subsubsection{Recent projects page}
+\subsubsection{Project editor}
+\subsubsection{Source editor}
+
+\subsection{User guide}
+
