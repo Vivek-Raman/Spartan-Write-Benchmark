@@ -5,6 +5,7 @@ from typing import Any
 
 import streamlit as st
 
+from .charts import render_charts
 from .models import DashboardRow, DashboardSummary
 
 
@@ -117,6 +118,10 @@ def render_dashboard(summary: DashboardSummary) -> None:
     if not filtered_rows:
         st.warning("No rows match the current filters.")
         return
+
+    render_charts(filtered_rows)
+
+    st.header("Detailed Results")
 
     score_keys = _collect_score_keys(filtered_rows)
 

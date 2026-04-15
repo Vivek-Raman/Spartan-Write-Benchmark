@@ -1,18 +1,34 @@
 import asyncio
 import importlib.resources
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import click
 
-from core.dataset import prepare_run_workspaces, run_dir_for_index
+from core.dataset import (
+    prepare_run_workspaces,
+    prepare_single_run_workspace,
+    run_dir_for_index,
+)
 from core.score import score_benchmark
-from core.utils import BenchmarkMetadata, do_chat, upsert_job, upsert_run, load_job_run, get_job_summary
+from core.utils import (
+    BenchmarkMetadata,
+    do_chat,
+    get_job_summary,
+    load_job_run,
+    upsert_job,
+    upsert_run,
+)
+
+_MAX_BENCHMARK_ATTEMPTS = 3
+_RETRY_SLEEP_SEC = 60
 
 
 def run_benchmarks(context: dict) -> None:
     params = context.get("exec_params", {})
     iterations = params.get("iterations", 1)
+    do_scoring_only = params.get("do_scoring_only", False)
 
     with click.progressbar(context["dataset"],
                            length=context["dataset_count"],
@@ -24,7 +40,20 @@ def run_benchmarks(context: dict) -> None:
             source = Path(importlib.resources.files("core")).parent / "data" / dir_name
             prepare_run_workspaces(source, data_dir, iterations)
             for run_index in range(iterations):
-                asyncio.run(_do_benchmark(context, data_dir, dir_name, run_index))
+                for attempt in range(1, _MAX_BENCHMARK_ATTEMPTS + 1):
+                    if attempt > 1:
+                        click.echo(
+                            f"    + Attempt {attempt}/{_MAX_BENCHMARK_ATTEMPTS} "
+                            f"after {_RETRY_SLEEP_SEC}s sleep..."
+                        )
+                        time.sleep(_RETRY_SLEEP_SEC)
+                        if not do_scoring_only:
+                            prepare_single_run_workspace(source, data_dir, run_index)
+                    ok = asyncio.run(
+                        _do_benchmark(context, data_dir, dir_name, run_index)
+                    )
+                    if ok:
+                        break
     click.echo(
         "+ Benchmarking complete. Please run the dashboard to view the results."
     )
@@ -35,8 +64,9 @@ def _metadata_for_run(
 ) -> BenchmarkMetadata:
     """Build a BenchmarkMetadata instance for this execution (fresh chat or scoring-only)."""
     if do_scoring_only:
+        model_label = context["model"].replace("/", "--")
         existing = load_job_run(
-            context["db_path"], context["model"], job_id, run_index
+            context["db_path"], model_label, job_id, run_index
         )
         if existing is None:
             raise ValueError(
@@ -46,7 +76,9 @@ def _metadata_for_run(
     return BenchmarkMetadata(summary=summary)
 
 
-async def _do_benchmark(context: dict, data_dir: Path, job_id: str, run_index: int) -> None:
+async def _do_benchmark(
+    context: dict, data_dir: Path, job_id: str, run_index: int
+) -> bool:
     params = context.get("exec_params", {})
     do_scoring_only = params.get("do_scoring_only", False)
 
@@ -66,7 +98,7 @@ async def _do_benchmark(context: dict, data_dir: Path, job_id: str, run_index: i
             prompt = (run_workspace / "prompt.txt").read_text().strip()
             metadata.time_chat_start = _get_timestamp()
             metadata.chat_result = do_chat(
-                context, str(run_workspace.resolve()), prompt
+                context, str(run_workspace.resolve()), prompt, run_index
             )
             metadata.time_chat_end = _get_timestamp()
 
@@ -88,6 +120,7 @@ async def _do_benchmark(context: dict, data_dir: Path, job_id: str, run_index: i
             metadata,
             run_dir_for_index(run_index),
         )
+    return metadata.status == "completed"
 
 
 def _get_timestamp() -> str:

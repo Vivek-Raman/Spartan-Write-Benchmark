@@ -1,5 +1,7 @@
 import json
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -35,25 +37,43 @@ CREATE TABLE IF NOT EXISTS runs (
 """
 
 
-def init_db(db_path: Path) -> None:
-    """Create the benchmark database and tables if they don't exist."""
-    conn = sqlite3.connect(str(db_path))
-    conn.executescript(_SCHEMA)
-    conn.close()
-
-
-def _connect(db_path: Path) -> sqlite3.Connection:
+@contextmanager
+def _connection(db_path: Path) -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def init_db(db_path: Path) -> None:
+    """Create the benchmark database and tables if they don't exist."""
+    with _connection(db_path) as conn:
+        conn.executescript(_SCHEMA)
+
+
+def flush_model_data(db_path: Path, model: str, model_dir: Path) -> None:
+    """Remove all DB rows and the on-disk directory for a model."""
+    with _connection(db_path) as conn:
+        conn.execute(
+            "DELETE FROM runs WHERE job_id IN "
+            "(SELECT id FROM jobs WHERE model = ?)",
+            (model,),
+        )
+        conn.execute("DELETE FROM jobs WHERE model = ?", (model,))
+        conn.commit()
+
+    import shutil
+    if model_dir.exists():
+        shutil.rmtree(model_dir)
 
 
 def upsert_job(db_path: Path, model: str, job_id: str, summary: str = "") -> int:
     """Insert or update a job row; return its row id."""
-    conn = _connect(db_path)
-    try:
+    with _connection(db_path) as conn:
         conn.execute(
             "INSERT INTO jobs (model, job_id, summary) VALUES (?, ?, ?) "
             "ON CONFLICT(model, job_id) DO UPDATE SET summary = excluded.summary",
@@ -65,8 +85,6 @@ def upsert_job(db_path: Path, model: str, job_id: str, summary: str = "") -> int
             (model, job_id),
         ).fetchone()
         return row["id"]
-    finally:
-        conn.close()
 
 
 def upsert_run(
@@ -79,8 +97,7 @@ def upsert_run(
     run_workspace: str,
 ) -> None:
     """Insert or replace a run row from a BenchmarkMetadata instance."""
-    conn = _connect(db_path)
-    try:
+    with _connection(db_path) as conn:
         conn.execute(
             """
             INSERT INTO runs
@@ -122,16 +139,13 @@ def upsert_run(
             ),
         )
         conn.commit()
-    finally:
-        conn.close()
 
 
 def load_job_run(
     db_path: Path, model: str, job_id: str, run_index: int
 ) -> dict[str, Any] | None:
     """Load a single run as a dict compatible with BenchmarkMetadata.from_dict."""
-    conn = _connect(db_path)
-    try:
+    with _connection(db_path) as conn:
         row = conn.execute(
             """
             SELECT j.summary, r.*
@@ -144,27 +158,21 @@ def load_job_run(
         if row is None:
             return None
         return _row_to_dict(row)
-    finally:
-        conn.close()
 
 
 def get_job_summary(db_path: Path, model: str, job_id: str) -> str:
     """Return the summary for a job, or empty string if not found."""
-    conn = _connect(db_path)
-    try:
+    with _connection(db_path) as conn:
         row = conn.execute(
             "SELECT summary FROM jobs WHERE model = ? AND job_id = ?",
             (model, job_id),
         ).fetchone()
         return row["summary"] if row else ""
-    finally:
-        conn.close()
 
 
 def load_all_rows(db_path: Path) -> list[dict[str, Any]]:
     """Return all runs joined with their job info for the dashboard."""
-    conn = _connect(db_path)
-    try:
+    with _connection(db_path) as conn:
         rows = conn.execute(
             """
             SELECT j.model, j.job_id, j.summary, r.*
@@ -174,8 +182,6 @@ def load_all_rows(db_path: Path) -> list[dict[str, Any]]:
             """
         ).fetchall()
         return [dict(r) for r in rows]
-    finally:
-        conn.close()
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
