@@ -1,0 +1,43 @@
+\section{Problem statement}
+
+Preparing academic documents remains a significant bottleneck for researchers and scholars.
+\LaTeX\ offers unmatched quality and control but demands steep learning curves for formatting, structure, and syntax.
+Writers must context-switch between content creation and markup management, dividing attention between what they want to say and how to say it in \LaTeX.
+Even experienced users spend considerable time on repetitive tasks like organizing sections, placing and captioning figures, managing bibliography references, fixing formatting inconsistencies, and more.
+This inefficiency cascades through the publishing pipeline as well.
+Publishers can spend hours in back-and-forth corrections with authors over formatting errors, misaligned figures, and citation inconsistencies that could have been prevented with proper tooling.
+Conversely, word processors like Microsoft Word or Google Docs offer ease of use but lack the precision, scalability, and professional output quality required for academic publishing, as they are built for a more general purpose audience.
+This creates a painful gap: scholars and students either invest weeks mastering \LaTeX\ tooling before they can write effectively, or compromise on document quality by using less-capable alternatives.
+Spartan Write eliminates this barrier by automating syntactic tasks through an AI agent, allowing first-time users and students to produce publication-quality documents without the traditional learning curve.
+
+\subsection{Functional requirements}
+
+\begin{itemize}
+    \item Create \LaTeX\ projects from pre-defined templates.
+    \item Open \LaTeX\ projects downloaded from other publishers.
+    \item Converse with an AI agent that manages the document's source code.
+    \item Allow direct source code manipulation if desired by the user.
+    \item Support image uploads to the agent to attach to the document, or to parse and generate \LaTeX\ code, based on the user's request.
+    \item Evaluate and configure the best LLM and provider for the task using a reproducible test suite.
+    \item Deploy a user guide for grad-level students to quickly onboard and get started.
+\end{itemize}
+
+\subsection{Non-functional requirements}
+
+\begin{itemize}
+    \item Track AI usage and establish limits on usage using user accounts.
+    \item Allow bring-your-own-key (BYOK) users to bypass established limits at their expense.
+    \item Establish safeguards to ensure the agent remains within its scope.
+    \item Design the agent to adhere to constraints of ethical use.
+    \item Collect usage statistics for product iteration and insights.
+    \item Split the application architecture in order to establish separation of concerns.
+\end{itemize}
+
+\subsection{Future improvements}
+
+\begin{itemize}
+    \item Support undo of agent's actions.
+    \item Real-time collaboration for groups of users.
+    \item Dynamic template repository.
+    \item Integrate SyncTeX \cite{jlaurens_synctex} to improve document navigation by the agent.
+\end{itemize}
