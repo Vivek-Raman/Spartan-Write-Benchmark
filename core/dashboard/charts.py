@@ -9,11 +9,20 @@ import streamlit as st
 from .models import DashboardRow, DashboardRun
 
 _CHART_HEIGHT = 400
-_PLOTLY_LAYOUT = dict(
-    margin=dict(l=40, r=20, t=40, b=40),
-    font=dict(size=12),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-)
+
+
+def _base_plotly_layout() -> dict[str, Any]:
+    """Shared Plotly layout (no figure title—use Streamlit for title and caption)."""
+    return {
+        "font": dict(size=12),
+        "legend": dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        "margin": dict(l=40, r=20, t=40, b=40),
+    }
+
+
+def _streamlit_chart_heading(title: str, insight: str) -> None:
+    st.subheader(title)
+    st.caption(insight)
 
 
 def _flatten_runs(rows: list[DashboardRow]) -> list[dict[str, Any]]:
@@ -26,10 +35,8 @@ def _flatten_runs(rows: list[DashboardRow]) -> list[dict[str, Any]]:
             if run is None:
                 continue
             scores = run.scores or {}
-            tool_use = scores.get("tool_use", 0)
-            total_tool_calls = (
-                sum(tool_use.values()) if isinstance(tool_use, dict) else 0
-            )
+            tool_use = run.tool_use or {}
+            total_tool_calls = sum(tool_use.values())
             flat.append(
                 {
                     "model": row.model,
@@ -84,11 +91,15 @@ def _chart_success_rate(flat: list[dict[str, Any]]) -> None:
 
     fig.update_layout(
         barmode="group",
-        title="Run Status by Model",
         xaxis_title="Model",
         yaxis_title="Count",
         height=_CHART_HEIGHT,
-        **_PLOTLY_LAYOUT,
+        **_base_plotly_layout(),
+    )
+    _streamlit_chart_heading(
+        "Run Status by Model",
+        "See which models finish runs reliably versus fail or stay pending—use this "
+        "before comparing speed or tokens so you are not ranking models that did not complete.",
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -131,11 +142,15 @@ def _chart_avg_duration(completed: list[dict[str, Any]]) -> None:
         )
 
     fig.update_layout(
-        title="Average Chat Duration by Model",
         xaxis_title="Model",
         yaxis_title="Duration (seconds)",
         height=_CHART_HEIGHT,
-        **_PLOTLY_LAYOUT,
+        **_base_plotly_layout(),
+    )
+    _streamlit_chart_heading(
+        "Average Chat Duration by Model",
+        "Compare typical end-to-end latency per model; scattered points show run-to-run "
+        "variance so you can spot stable versus erratic performance.",
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -173,11 +188,15 @@ def _chart_token_usage(completed: list[dict[str, Any]]) -> None:
 
     fig.update_layout(
         barmode="stack",
-        title="Average Token Usage by Model",
         xaxis_title="Model",
         yaxis_title="Tokens (avg per run)",
         height=_CHART_HEIGHT,
-        **_PLOTLY_LAYOUT,
+        **_base_plotly_layout(),
+    )
+    _streamlit_chart_heading(
+        "Average Token Usage by Model",
+        "Understand average prompt, reasoning, and completion size per model—useful for "
+        "cost estimates and spotting models that lean on long contexts or verbose replies.",
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -207,12 +226,16 @@ def _chart_duration_per_job(completed: list[dict[str, Any]]) -> None:
 
     fig.update_layout(
         barmode="group",
-        title="Chat Duration per Job",
         xaxis_title="Job",
         yaxis_title="Duration (seconds, avg)",
         height=_CHART_HEIGHT + 40,
         xaxis_tickangle=-30,
-        **_PLOTLY_LAYOUT,
+        **_base_plotly_layout(),
+    )
+    _streamlit_chart_heading(
+        "Chat Duration per Job",
+        "Compare models on the same benchmark jobs side by side—highlights task-specific "
+        "slowdowns instead of hiding them in a single overall average.",
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -258,9 +281,13 @@ def _chart_tool_heatmap(completed: list[dict[str, Any]]) -> None:
         )
     )
     fig.update_layout(
-        title="Tool Usage (avg calls per run)",
         height=max(250, 80 * len(models) + 100),
-        **_PLOTLY_LAYOUT,
+        **_base_plotly_layout(),
+    )
+    _streamlit_chart_heading(
+        "Tool Usage (avg calls per run)",
+        "See how often each model invokes each tool per run—reveals different automation "
+        "patterns and possible over- or under-use of specific capabilities.",
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -290,14 +317,22 @@ def _chart_duration_vs_tokens(completed: list[dict[str, Any]]) -> None:
         y="chat_duration",
         color="model",
         hover_data=["job_id"],
-        title="Chat Duration vs Total Tokens",
         labels={
             "total_tokens": "Total Tokens (input + output)",
             "chat_duration": "Duration (seconds)",
         },
     )
     fig.update_traces(marker=dict(size=10, line=dict(width=1, color="white")))
-    fig.update_layout(height=_CHART_HEIGHT, **_PLOTLY_LAYOUT)
+    fig.update_layout(
+        height=_CHART_HEIGHT,
+        title=dict(text=""),
+        **_base_plotly_layout(),
+    )
+    _streamlit_chart_heading(
+        "Chat Duration vs Total Tokens",
+        "Relates time to workload size (tokens); outliers off the usual trend can mean "
+        "inefficient tool use, provider slowness, or jobs that are heavy for reasons beyond token count.",
+    )
     st.plotly_chart(fig, width="stretch")
 
 

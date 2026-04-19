@@ -17,6 +17,14 @@ def _run_from_row(row: dict) -> DashboardRun | None:
     chat_result = row.get("chat_result")
     if isinstance(chat_result, str):
         chat_result = json.loads(chat_result)
+    raw_tu = row.get("tool_use") or {}
+    tool_use: dict[str, int] = {}
+    if isinstance(raw_tu, dict):
+        for k, v in raw_tu.items():
+            try:
+                tool_use[str(k)] = int(v)
+            except (TypeError, ValueError):
+                continue
     return DashboardRun(
         index=row["run_index"],
         status=row.get("status") or "pending",
@@ -27,6 +35,7 @@ def _run_from_row(row: dict) -> DashboardRun | None:
         time_chat_end=row.get("time_chat_end"),
         time_score_start=row.get("time_score_start"),
         time_score_end=row.get("time_score_end"),
+        tool_use=tool_use,
     )
 
 

@@ -6,6 +6,17 @@
 \ProcessOptions\relax
 \LoadClass[12pt, onecolumn, journal]{IEEEtran}
 
+% Decimal section numbering (3., 3.1., 3.1.1., …) in headings, refs, and ToC.
+% IEEEtran journal (non-compsoc) defaults to Roman / I-A style; override after load.
+\renewcommand{\thesection}{\arabic{section}.}
+\renewcommand{\thesubsection}{\thesection\arabic{subsection}.}
+\renewcommand{\thesubsubsection}{\thesubsection\arabic{subsubsection}.}
+\renewcommand{\theparagraph}{\thesubsubsection\arabic{paragraph}.}
+\renewcommand{\thesectiondis}{\thesection}
+\renewcommand{\thesubsectiondis}{\thesubsection}
+\renewcommand{\thesubsubsectiondis}{\thesubsubsection}
+\renewcommand{\theparagraphdis}{\theparagraph}
+
 % ==========================================
 % REQUIRED PACKAGES
 % ==========================================
@@ -109,43 +120,131 @@
     \setcounter{page}{1}
 }
 
-% Mandatory Unnumbered Pages
-\newcommand{\thesistitlepage}[4]{
+% ==========================================
+% MANDATORY UNNUMBERED PRELIMINARY PAGES
+% ==========================================
+% All preliminary pages follow SJSU Graduate Studies formatting:
+%   - 12pt Times (inherited from class options)
+%   - Titles: ALL CAPS, centered, NOT bold, single-spaced if multi-line
+%   - No page numbers on the three mandatory pages
+
+% ---- Shared Metadata ----
+% The university name is set from the .tex file (not hardcoded here) so this
+% class can be reused across campuses. Call \universityname{...} in your
+% document's frontmatter BEFORE \thesistitlepage / \signaturepage. The title
+% page uses the name as-is; the signature page uppercases it automatically.
+\newcommand{\@universityname}{%
+    \ClassError{SJSUthesis}{University name not set}%
+        {Call \string\universityname{<Name>} in the document before using the preliminary pages.}%
+}
+\newcommand{\universityname}[1]{\renewcommand{\@universityname}{#1}}
+
+% ---- Title Page ----
+% Usage:
+%   \thesistitlepage
+%     {FULL TITLE IN ALL CAPS}   % #1
+%     {Thesis}                   % #2  Thesis | Dissertation
+%     {Kinesiology}              % #3  Department name (no "Department of" prefix)
+%     {Master of Arts}           % #4  Degree
+%     {Peter Maravitch}          % #5  Author full name
+%     {December 2017}            % #6  Graduation month + year
+\newcommand{\thesistitlepage}[6]{%
     \clearpage
     \thispagestyle{empty}
     \begin{center}
-        \vspace*{2in}
-        {\Large \textbf{#1}\par} % Title
-        \vspace{1in}
-        A Thesis Presented to \\ #2 \par % University
-        \vspace{1in}
-        By \\ #3 \par % Author
-        \vspace{1in}
-        #4 \par % Date
+        \vspace*{1in}
+        % Title: ALL CAPS, 12pt, not bold, single-spaced even if multi-line.
+        {\singlespacing\normalsize #1\par}
+        \vspace{0.5in}
+
+        % Everything below is double-spaced per SJSU rules.
+        \begin{doublespace}
+        A #2\\
+        Presented to\\
+        The Faculty of the Department of #3\\
+        \@universityname
+
+        \vspace{0.25in}
+        In Partial Fulfillment\\
+        of the Requirements for the Degree
+
+        \vspace{0.4in}
+        #4
+
+        \vspace{0.4in}
+        by\\
+        #5
+
+        \vspace{0.4in}
+        #6
+        \end{doublespace}
     \end{center}
     \clearpage
 }
 
-\newcommand{\copyrightpage}[1]{
+% ---- Copyright Page ----
+% Usage:
+%   \copyrightpage{2017}{Nicklas Lidstr\"om}
+\newcommand{\copyrightpage}[2]{%
     \clearpage
     \thispagestyle{empty}
-    \vspace*{4in}
+    \vspace*{\fill}
+    \begin{singlespace}
+    \vspace{3in}
     \begin{center}
-        Copyright \textcopyright\ #1
+        \textcopyright\ #1\\
+        #2\\
+        ALL RIGHTS RESERVED
     \end{center}
+    \end{singlespace}
+    \vspace*{\fill}
     \clearpage
 }
 
-\newcommand{\signaturepage}{
+% ---- Signature Page ----
+% A committee member entry: name on the left, affiliation on the right.
+% Use inside the final argument of \signaturepage.
+\newcommand{\committeemember}[2]{%
+    \noindent\begin{minipage}[t]{0.55\textwidth}\raggedright #1\end{minipage}%
+    \hfill
+    \begin{minipage}[t]{0.40\textwidth}\raggedright #2\end{minipage}\par
+    \vspace{0.35in}
+}
+
+% Usage:
+%   \signaturepage
+%     {FULL TITLE IN ALL CAPS}    % #1
+%     {Thesis}                    % #2  Thesis | Dissertation
+%     {Richard Shermer}           % #3  Author
+%     {PHILOSOPHY}                % #4  Approving department (ALL CAPS)
+%     {August 2017}               % #5  Approval date
+%     {\committeemember{...}{...} % #6  Committee list
+%      \committeemember{...}{...}}
+\newcommand{\signaturepage}[6]{%
     \clearpage
     \thispagestyle{empty}
-    \vspace*{2in}
+    \begin{singlespace}
     \begin{center}
-        [Replace this page with the Official SJSU Signature Page]
+        \vspace*{0.75in}
+        The Designated #2 Committee Approves the #2 Titled\\
+        \vspace{0.25in}
+        #1\\
+        \vspace{0.25in}
+        by\\
+        #3\\
+        \vspace{0.5in}
+        APPROVED FOR THE DEPARTMENT OF #4\\
+        \MakeUppercase{\@universityname}\\
+        \vspace{0.25in}
+        #5
     \end{center}
+    \vspace{0.5in}
+    #6
+    \end{singlespace}
     \clearpage
 }
 
+% ---- Abstract Page ----
 \newcommand{\abstractpage}[1]{
     \clearpage
     \thispagestyle{empty}

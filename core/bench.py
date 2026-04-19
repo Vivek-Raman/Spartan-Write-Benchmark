@@ -1,5 +1,6 @@
 import asyncio
 import importlib.resources
+import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -95,10 +96,14 @@ async def _do_benchmark(
 
     try:
         if not do_scoring_only:
-            prompt = (run_workspace / "prompt.txt").read_text().strip()
+            prompt_text, attached_image_path = _load_prompt(run_workspace)
             metadata.time_chat_start = _get_timestamp()
             metadata.chat_result = do_chat(
-                context, str(run_workspace.resolve()), prompt, run_index
+                context,
+                str(run_workspace.resolve()),
+                prompt_text,
+                run_index,
+                attached_image_path=attached_image_path,
             )
             metadata.time_chat_end = _get_timestamp()
 
@@ -121,6 +126,50 @@ async def _do_benchmark(
             run_dir_for_index(run_index),
         )
     return metadata.status == "completed"
+
+
+def _benchmark_root() -> Path:
+    """Directory containing ``core/`` and ``data/`` (bundled dataset + shared assets)."""
+    return Path(importlib.resources.files("core")).parent
+
+
+def _resolve_attached_image_path(run_workspace: Path, rel: str | None) -> str | None:
+    """Resolve ``attached_image`` from ``prompt.json``.
+
+    Paths are resolved in order:
+
+    1. Absolute paths on disk (as given).
+    2. Relative to the run workspace (job-local files, e.g. ``figures/foo.png``).
+    3. Relative to the benchmark package root (shared files, e.g. ``data/test-image.png``).
+
+    If the file is missing from both locations, return a path consistent with the
+    reference (``data/...`` prefers the benchmark-root path so the server checks the
+    same location as shared assets).
+    """
+    if not rel:
+        return None
+    p = Path(rel)
+    if p.is_absolute():
+        return str(p.resolve())
+    local = (run_workspace / p).resolve()
+    external = (_benchmark_root() / p).resolve()
+    if local.is_file():
+        return str(local)
+    if external.is_file():
+        return str(external)
+    # No file: prefer benchmark root for ``data/...`` style shared paths; else job-local.
+    parts = p.parts
+    if parts and parts[0] == "data":
+        return str(external)
+    return str(local)
+
+
+def _load_prompt(run_workspace: Path) -> tuple[str, str | None]:
+    data = json.loads((run_workspace / "prompt.json").read_text())
+    text = data["text"].strip()
+    rel = data.get("attached_image")
+    abs_path = _resolve_attached_image_path(run_workspace, rel)
+    return text, abs_path
 
 
 def _get_timestamp() -> str:

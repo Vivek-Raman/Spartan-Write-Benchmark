@@ -4,16 +4,26 @@ from .models import DashboardRow, DashboardRun
 
 
 def dashboard_run_from_metadata(index: int, meta: BenchmarkMetadata) -> DashboardRun:
+    scores = dict(meta.scores or {})
+    tool_use_raw = scores.pop("tool_use", None)
+    tool_use: dict[str, int] = {}
+    if isinstance(tool_use_raw, dict):
+        for k, v in tool_use_raw.items():
+            try:
+                tool_use[str(k)] = int(v)
+            except (TypeError, ValueError):
+                continue
     return DashboardRun(
         index=index,
         status=meta.status or "pending",
-        scores=dict(meta.scores or {}),
+        scores=scores,
         error=meta.error or "",
         chat_result=meta.chat_result,
         time_chat_start=meta.time_chat_start,
         time_chat_end=meta.time_chat_end,
         time_score_start=meta.time_score_start,
         time_score_end=meta.time_score_end,
+        tool_use=tool_use,
     )
 
 

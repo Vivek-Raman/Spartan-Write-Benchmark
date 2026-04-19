@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -16,6 +16,7 @@ class DashboardRun:
     time_chat_end: Optional[str] = None
     time_score_start: Optional[str] = None
     time_score_end: Optional[str] = None
+    tool_use: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass

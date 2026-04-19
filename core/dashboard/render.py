@@ -20,8 +20,12 @@ def _collect_score_keys(rows: list[DashboardRow]) -> list[str]:
     keys: set[str] = set()
     for row in rows:
         for r in row.runs:
-            if r is not None and r.scores:
+            if r is None:
+                continue
+            if r.scores:
                 keys.update(r.scores.keys())
+            if r.tool_use:
+                keys.add("tool_use")
     return sorted(keys)
 
 
@@ -155,7 +159,10 @@ def _render_job_section(row: DashboardRow, score_keys: list[str]) -> None:
             "Error": _truncate(run.error, 120),
         }
         for k in score_keys:
-            d[f"score_{k}"] = (run.scores or {}).get(k)
+            if k == "tool_use":
+                d[f"score_{k}"] = dict(run.tool_use) if run.tool_use else None
+            else:
+                d[f"score_{k}"] = (run.scores or {}).get(k)
         table_rows.append(d)
 
     st.dataframe(table_rows, width="stretch", hide_index=True)

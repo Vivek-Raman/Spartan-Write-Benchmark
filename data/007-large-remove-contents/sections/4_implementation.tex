@@ -58,19 +58,33 @@ However, the system enforces a limit on retry attempts (typically 3) within a si
 
 \subsubsection{Token usage metrics}
 
-Every agent interaction is tracked for token consumption, measuring the total number of tokens sent to and received from the language model.
-This metric provides insight into the computational cost of individual requests and enables billing, usage quotas, and performance analysis.
-Token counts are aggregated by user, model, and time period for reporting.
+Every agent interaction is tracked and transmitted to PostHog \cite{posthog} to capture comprehensive performance data.
+This includes precise token consumption, measuring both input and output volume, tagged with structured metadata such as user ID, model specifications, tool invocations, and session outcomes.
+By aggregating these metrics by user, model, and time period, the system provides granular insights into computational costs and infrastructure scaling.
+These data points power real-time dashboards that monitor LLM quality and user feedback, directly informing decisions regarding billing logic, usage quotas, and feature development.
 
-\subsubsection{PostHog Analytics Integration}
+\subsubsection{Safety \& ethical constraints}
 
-Every Agent interaction is sent to PostHog with structured metadata including user ID, model used, token count, tool invocations, conversation duration, and outcome (success/error). This enables real-time dashboards, cohort analysis, and long-term trend tracking. Analytics inform decisions about model selection, feature development, and infrastructure scaling.
+The agent is designed with built-in safety mechanisms.
 
-\subsubsection{Safety \& Integrity Constraints}
-
-The Agent is designed with built-in safety mechanisms: all file operations validate paths to prevent escaping the project directory, the prompt instructs the agent not to add unsolicited content, and compilation errors trigger error feedback rather than silent failures. These constraints ensure the Agent acts as a trusted collaborator rather than an autonomous modifier.
+\begin{itemize}
+    \item All file operations validate paths at the tooling level to prevent escaping the project directory.
+    \item The prompt instructs the agent not to add unsolicited content.
+    \item Compilation errors trigger error feedback rather than silent failures.
+\end{itemize}
+These constraints ensure the agent acts as a trusted scribe rather than an autonomous modifier.
 
 \subsection{\LaTeX\ compilation}
+
+The \LaTeX\ compilation subsystem is implemented as a sidecar component \cite{tauri_sidecar}.
+The system leverages the Tectonic typesetting engine as its core compilation backend \cite{tectonic}.
+
+Client requests containing the target project directory invoke the Tectonic compiler via subprocess execution with configurable parameters.
+Process execution captures both standard output and error streams for diagnostic purposes.
+The output PDF file path is displayed to the user upon successful generation.
+
+Compilation can be initiated by either the user or the agent.
+In the agent's case, the compilation status and error message are used to iteratively debug and fix the document.
 
 \subsection{Test suite}
 

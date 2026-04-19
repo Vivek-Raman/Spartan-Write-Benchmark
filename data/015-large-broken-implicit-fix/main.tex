@@ -1,0 +1,37 @@
+\documentclass{SJSUthesis}
+
+\begin{document}
+
+\makefrontmatter
+
+% 1-4: The unnumbered mandatory pages
+\input{sections/frontmatter}
+\input{sections/abstract}
+
+% Rule 14: First numbered page MUST be v
+\startprelimnumbering 
+
+% Optional Numbered Pages
+% \input{sections/dedi-ack}
+
+% Mandatory Numbered Pages
+\clearpage
+\tableofcontents
+
+\clearpage
+\listoftables
+
+\clearpage
+\listoffigures
+
+% Transition to Main Document
+\makemainmatter
+
+\input{sections/1_introduction}
+\input{sections/2_problem-statement}
+\input{sections/3_architecture}
+\input{sections/4_implementation}
+\input{sections/5_results}
+\input{sections/6_conclusion}
+\input{sections/references}
+

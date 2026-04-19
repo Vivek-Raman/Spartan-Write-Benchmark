@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -34,7 +35,71 @@ CREATE TABLE IF NOT EXISTS runs (
     extra TEXT,
     UNIQUE(job_id, run_index)
 );
+
+CREATE TABLE IF NOT EXISTS run_tool_usage (
+    run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    tool_name TEXT NOT NULL,
+    call_count INTEGER NOT NULL,
+    PRIMARY KEY (run_id, tool_name)
+);
 """
+
+
+def _split_scores_and_tool_use(
+    scores: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, dict[str, int]]:
+    """Return scores blob for the `runs.scores` column and per-tool counts."""
+    if not scores:
+        return None, {}
+    raw = dict(scores)
+    tu = raw.pop("tool_use", None)
+    tool_use: dict[str, int] = {}
+    if isinstance(tu, dict):
+        for name, count in tu.items():
+            try:
+                n = int(count)
+            except (TypeError, ValueError):
+                continue
+            if n > 0:
+                tool_use[str(name)] = n
+    rest = raw
+    if not rest:
+        return None, tool_use
+    return rest, tool_use
+
+
+def _replace_run_tool_usage(
+    conn: sqlite3.Connection, run_id: int, tool_use: dict[str, int]
+) -> None:
+    conn.execute("DELETE FROM run_tool_usage WHERE run_id = ?", (run_id,))
+    for tool_name, call_count in tool_use.items():
+        conn.execute(
+            """
+            INSERT INTO run_tool_usage (run_id, tool_name, call_count)
+            VALUES (?, ?, ?)
+            """,
+            (run_id, tool_name, call_count),
+        )
+
+
+def _tool_usage_by_run_id(
+    conn: sqlite3.Connection, run_ids: list[int]
+) -> dict[int, dict[str, int]]:
+    if not run_ids:
+        return {}
+    placeholders = ",".join("?" * len(run_ids))
+    rows = conn.execute(
+        f"""
+        SELECT run_id, tool_name, call_count
+        FROM run_tool_usage
+        WHERE run_id IN ({placeholders})
+        """,
+        run_ids,
+    ).fetchall()
+    out: dict[int, dict[str, int]] = defaultdict(dict)
+    for r in rows:
+        out[r["run_id"]][r["tool_name"]] = int(r["call_count"])
+    return dict(out)
 
 
 @contextmanager
@@ -97,7 +162,9 @@ def upsert_run(
     run_workspace: str,
 ) -> None:
     """Insert or replace a run row from a BenchmarkMetadata instance."""
+    scores_blob, tool_use = _split_scores_and_tool_use(metadata.scores)
     with _connection(db_path) as conn:
+        conn.execute("BEGIN")
         conn.execute(
             """
             INSERT INTO runs
@@ -134,10 +201,20 @@ def upsert_run(
                 metadata.time_score_start,
                 metadata.time_score_end,
                 json.dumps(metadata.chat_result) if metadata.chat_result is not None else None,
-                json.dumps(metadata.scores) if metadata.scores else None,
+                json.dumps(scores_blob) if scores_blob else None,
                 json.dumps(metadata.extra) if metadata.extra else None,
             ),
         )
+        run_row = conn.execute(
+            "SELECT id FROM runs WHERE job_id = ? AND run_index = ?",
+            (job_row_id, run_index),
+        ).fetchone()
+        if run_row is None:
+            conn.rollback()
+            raise RuntimeError(
+                f"upsert_run: missing runs row for job_id={job_row_id} run_index={run_index}"
+            )
+        _replace_run_tool_usage(conn, int(run_row["id"]), tool_use)
         conn.commit()
 
 
@@ -157,7 +234,22 @@ def load_job_run(
         ).fetchone()
         if row is None:
             return None
-        return _row_to_dict(row)
+        d = _row_to_dict(row)
+        run_id = d.get("id")
+        if run_id is not None:
+            tu_rows = conn.execute(
+                "SELECT tool_name, call_count FROM run_tool_usage WHERE run_id = ?",
+                (run_id,),
+            ).fetchall()
+            if tu_rows:
+                tool_use = {t["tool_name"]: int(t["call_count"]) for t in tu_rows}
+                scores = d.get("scores")
+                if not isinstance(scores, dict):
+                    scores = {}
+                scores = dict(scores)
+                scores["tool_use"] = tool_use
+                d["scores"] = scores
+        return d
 
 
 def get_job_summary(db_path: Path, model: str, job_id: str) -> str:
@@ -181,7 +273,13 @@ def load_all_rows(db_path: Path) -> list[dict[str, Any]]:
             ORDER BY j.model, j.job_id, r.run_index
             """
         ).fetchall()
-        return [dict(r) for r in rows]
+        result = [dict(r) for r in rows]
+        run_ids = [r["id"] for r in result if r.get("id") is not None]
+        by_run = _tool_usage_by_run_id(conn, run_ids)
+        for r in result:
+            rid = r.get("id")
+            r["tool_use"] = dict(by_run.get(int(rid), {})) if rid is not None else {}
+        return result
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:

@@ -25,21 +25,30 @@ def load_creds(context: dict) -> None:
     context['benchmark_user_email'] = os.getenv("BENCHMARK_USER_EMAIL")
 
 
-def do_chat(context: dict, dir: str, prompt: str, run_index: int = 0) -> dict:
+def do_chat(
+    context: dict,
+    dir: str,
+    prompt: str,
+    run_index: int = 0,
+    attached_image_path: str | None = None,
+) -> dict:
     model_label = context.get("model", "").replace("/", "--")
     api_session_id = f"{context['session_id']}-{model_label}-{run_index}"
+    payload = {
+        "dir": dir,
+        "prompt": prompt,
+        "model": context.get("model"),
+        "session_id": api_session_id,
+        "openai_api_key": context['openai_api_key'],
+        "openai_api_base": context['openai_api_base'],
+        "openai_api_model": context['openai_api_model'],
+        "user_email": context['benchmark_user_email'],
+    }
+    if attached_image_path:
+        payload["attached_image_path"] = attached_image_path
     response = requests.post(
         f"{BASE_URL}/chat",
-        json={
-            "dir": dir,
-            "prompt": prompt,
-            "model": context.get("model"),
-            "session_id": api_session_id,
-            "openai_api_key": context['openai_api_key'],
-            "openai_api_base": context['openai_api_base'],
-            "openai_api_model": context['openai_api_model'],
-            "user_email": context['benchmark_user_email'],
-        },
+        json=payload,
         timeout=600,
     )
 
