@@ -146,65 +146,74 @@ def render_dashboard(summary: DashboardSummary) -> None:
     for model in _order_models_by_mean_cost(
         completed_filtered, by_model.keys()
     ):
-        st.subheader(model)
-        for row in sorted(by_model[model], key=lambda r: r.job_id):
-            _render_job_section(row, score_keys)
+        rows_for_model = sorted(by_model[model], key=lambda r: r.job_id)
+        n_jobs = len(rows_for_model)
+        job_label = "job" if n_jobs == 1 else "jobs"
+        with st.expander(
+            f"{model} · {n_jobs} {job_label}",
+            expanded=False,
+        ):
+            for row in rows_for_model:
+                _render_job_section(row, score_keys)
 
 
 def _render_job_section(row: DashboardRow, score_keys: list[str]) -> None:
-    st.markdown(f"**`{row.job_id}`** · {row.status} · {row.non_null_run_count()} run(s)")
-    if row.summary:
-        st.caption(_truncate(row.summary, 200))
+    n_runs = row.non_null_run_count()
+    run_label = "run" if n_runs == 1 else "runs"
+    job_expander_label = f"{row.job_id} · {row.status} · {n_runs} {run_label}"
+    with st.expander(job_expander_label, expanded=False):
+        if row.summary:
+            st.caption(_truncate(row.summary, 200))
 
-    table_rows: list[dict[str, Any]] = []
-    for i, run in enumerate(row.runs):
-        if run is None:
-            table_rows.append(
-                {
-                    "Run": i + 1,
-                    "Status": "—",
-                    "Error": "",
-                    **{f"score_{k}": None for k in score_keys},
-                }
-            )
-            continue
-        d: dict[str, Any] = {
-            "Run": i + 1,
-            "Status": run.status,
-            "Error": _truncate(run.error, 120),
-        }
-        for k in score_keys:
-            if k == "tool_use":
-                d[f"score_{k}"] = dict(run.tool_use) if run.tool_use else None
-            else:
-                d[f"score_{k}"] = (run.scores or {}).get(k)
-        table_rows.append(d)
-
-    st.dataframe(table_rows, width="stretch", hide_index=True)
-
-    chat_buttons = [
-        run
-        for run in row.runs
-        if run is not None and run.chat_result is not None
-    ]
-    if not chat_buttons:
-        return
-
-    st.caption("Chat transcripts")
-    n = len(chat_buttons)
-    cols = st.columns(min(n, 6) or 1)
-    for i, run in enumerate(chat_buttons):
-        with cols[i % len(cols)]:
-            safe_model = row.model.replace("/", "-").replace(" ", "_")
-            key = f"chat-{safe_model}-{row.job_id}-{run.index}"
-            if st.button(
-                f"Run {run.index + 1}",
-                key=key,
-                type="secondary",
-            ):
-                _chat_result_dialog(
-                    row.model,
-                    row.job_id,
-                    run.index,
-                    run.chat_result,
+        table_rows: list[dict[str, Any]] = []
+        for i, run in enumerate(row.runs):
+            if run is None:
+                table_rows.append(
+                    {
+                        "Run": i + 1,
+                        "Status": "—",
+                        "Error": "",
+                        **{f"score_{k}": None for k in score_keys},
+                    }
                 )
+                continue
+            d: dict[str, Any] = {
+                "Run": i + 1,
+                "Status": run.status,
+                "Error": _truncate(run.error, 120),
+            }
+            for k in score_keys:
+                if k == "tool_use":
+                    d[f"score_{k}"] = dict(run.tool_use) if run.tool_use else None
+                else:
+                    d[f"score_{k}"] = (run.scores or {}).get(k)
+            table_rows.append(d)
+
+        st.dataframe(table_rows, width="stretch", hide_index=True)
+
+        chat_buttons = [
+            run
+            for run in row.runs
+            if run is not None and run.chat_result is not None
+        ]
+        if not chat_buttons:
+            return
+
+        st.caption("Chat transcripts")
+        n = len(chat_buttons)
+        cols = st.columns(min(n, 6) or 1)
+        for i, run in enumerate(chat_buttons):
+            with cols[i % len(cols)]:
+                safe_model = row.model.replace("/", "-").replace(" ", "_")
+                key = f"chat-{safe_model}-{row.job_id}-{run.index}"
+                if st.button(
+                    f"Run {run.index + 1}",
+                    key=key,
+                    type="secondary",
+                ):
+                    _chat_result_dialog(
+                        row.model,
+                        row.job_id,
+                        run.index,
+                        run.chat_result,
+                    )
