@@ -104,53 +104,72 @@ def _chart_success_rate(flat: list[dict[str, Any]]) -> None:
     st.plotly_chart(fig, width="stretch")
 
 
-def _chart_avg_duration(completed: list[dict[str, Any]]) -> None:
-    """Bar per model showing mean chat_duration with individual run points overlaid."""
+def _chart_avg_duration_by_job(completed: list[dict[str, Any]]) -> None:
+    """Bar per job: mean chat_duration over all runs (all models), with runs overlaid."""
     runs_with_dur = [r for r in completed if r["chat_duration"] and r["chat_duration"] > 0]
     if not runs_with_dur:
         return
 
     from collections import defaultdict
 
-    by_model: dict[str, list[float]] = defaultdict(list)
+    by_job: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in runs_with_dur:
-        by_model[r["model"]].append(r["chat_duration"])
+        by_job[r["job_id"]].append(r)
 
-    models = sorted(by_model)
-    means = [sum(by_model[m]) / len(by_model[m]) for m in models]
+    jobs = sorted(by_job)
+    means = [sum(float(x["chat_duration"]) for x in by_job[j]) / len(by_job[j]) for j in jobs]
 
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
-            x=models,
+            x=jobs,
             y=means,
-            name="Mean",
+            name="Mean (all runs)",
             marker_color="#3498db",
             opacity=0.7,
         )
     )
-    for m in models:
-        fig.add_trace(
-            go.Scatter(
-                x=[m] * len(by_model[m]),
-                y=by_model[m],
-                mode="markers",
-                name=f"{m} runs",
-                marker=dict(size=8, line=dict(width=1, color="white")),
-                showlegend=False,
-            )
+
+    models = sorted({r["model"] for r in runs_with_dur})
+    palette = px.colors.qualitative.Set2
+    model_color = {m: palette[i % len(palette)] for i, m in enumerate(models)}
+
+    sx: list[str] = []
+    sy: list[float] = []
+    sc: list[str] = []
+    stext: list[str] = []
+    for j in jobs:
+        for row in by_job[j]:
+            sx.append(j)
+            sy.append(float(row["chat_duration"]))
+            m = row["model"]
+            sc.append(model_color[m])
+            stext.append(m)
+
+    fig.add_trace(
+        go.Scatter(
+            x=sx,
+            y=sy,
+            mode="markers",
+            marker=dict(size=8, color=sc, line=dict(width=1, color="white")),
+            text=stext,
+            hovertemplate="%{text}<br>%{y:.1f} s<extra></extra>",
+            showlegend=False,
         )
+    )
 
     fig.update_layout(
-        xaxis_title="Model",
+        xaxis_title="Job",
         yaxis_title="Duration (seconds)",
         height=_CHART_HEIGHT,
+        xaxis_tickangle=-30,
         **_base_plotly_layout(),
     )
     _streamlit_chart_heading(
-        "Average Chat Duration by Model",
-        "Compare typical end-to-end latency per model; scattered points show run-to-run "
-        "variance so you can spot stable versus erratic performance.",
+        "Average Chat Duration by Job",
+        "Each bar is the mean duration over every completed run for that benchmark job "
+        "(all models). Points are individual runs—hover for model—so you see task hardness "
+        "and spread instead of one model-level average that mixes different job mixes.",
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -350,7 +369,7 @@ def render_charts(rows: list[DashboardRow]) -> None:
     with col_left:
         _chart_success_rate(flat)
     with col_right:
-        _chart_avg_duration(completed)
+        _chart_avg_duration_by_job(completed)
 
     col_left2, col_right2 = st.columns(2)
     with col_left2:
