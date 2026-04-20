@@ -5,6 +5,7 @@ from .run_params import collect_parameters
 from .db import (
     init_db,
     flush_model_data,
+    flush_single_job,
     upsert_job,
     upsert_run,
     load_job_run,
@@ -15,6 +16,6 @@ from .db import (
 __all__ = [
     "locate_server", "do_chat", "load_creds", "read_json", "write_json",
     "BenchmarkMetadata", "collect_parameters",
-    "init_db", "flush_model_data", "upsert_job", "upsert_run", "load_job_run", "load_all_rows",
+    "init_db", "flush_model_data", "flush_single_job", "upsert_job", "upsert_run", "load_job_run", "load_all_rows",
     "get_job_summary",
 ]

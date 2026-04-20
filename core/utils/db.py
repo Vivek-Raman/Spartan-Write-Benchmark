@@ -136,6 +136,28 @@ def flush_model_data(db_path: Path, model: str, model_dir: Path) -> None:
         shutil.rmtree(model_dir)
 
 
+def flush_single_job(
+    db_path: Path, model: str, job_id: str, model_dir: Path
+) -> None:
+    """Remove runs and job row for one dataset, and delete its result tree under model_dir."""
+    import shutil
+
+    with _connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT id FROM jobs WHERE model = ? AND job_id = ?",
+            (model, job_id),
+        ).fetchone()
+        if row is not None:
+            internal_id = row["id"]
+            conn.execute("DELETE FROM runs WHERE job_id = ?", (internal_id,))
+            conn.execute("DELETE FROM jobs WHERE id = ?", (internal_id,))
+            conn.commit()
+
+    job_path = model_dir / "data" / job_id
+    if job_path.exists():
+        shutil.rmtree(job_path)
+
+
 def upsert_job(db_path: Path, model: str, job_id: str, summary: str = "") -> int:
     """Insert or update a job row; return its row id."""
     with _connection(db_path) as conn:

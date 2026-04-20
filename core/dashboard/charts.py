@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 import plotly.express as px
@@ -50,6 +51,7 @@ def _flatten_runs(rows: list[DashboardRow]) -> list[dict[str, Any]]:
                     "input_tokens": scores.get("input_tokens"),
                     "output_tokens": scores.get("output_tokens"),
                     "reasoning_tokens": scores.get("reasoning_tokens"),
+                    "total_cost": scores.get("total_cost"),
                     "tool_use": tool_use,
                     "total_tool_calls": total_tool_calls,
                 }
@@ -59,6 +61,41 @@ def _flatten_runs(rows: list[DashboardRow]) -> list[dict[str, Any]]:
 
 def _completed_runs(flat: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [r for r in flat if r["status"] == "completed"]
+
+
+def _mean_total_cost_by_model(completed: list[dict[str, Any]]) -> dict[str, float]:
+    """Mean ``total_cost`` per model over completed runs that recorded a cost."""
+    from collections import defaultdict
+
+    sums: dict[str, float] = defaultdict(float)
+    counts: dict[str, int] = defaultdict(int)
+    for r in completed:
+        c = r.get("total_cost")
+        if c is None:
+            continue
+        try:
+            sums[r["model"]] += float(c)
+        except (TypeError, ValueError):
+            continue
+        counts[r["model"]] += 1
+    return {m: sums[m] / counts[m] for m in sums if counts[m]}
+
+
+def _order_models_by_mean_cost(
+    completed: list[dict[str, Any]],
+    models: Iterable[str],
+) -> list[str]:
+    """Order model names by mean ``total_cost`` (highest first); no-cost models last."""
+    mean_cost = _mean_total_cost_by_model(completed)
+    ms = list(models)
+    return sorted(
+        ms,
+        key=lambda m: (
+            0 if m in mean_cost else 1,
+            -mean_cost[m],
+            m,
+        ),
+    )
 
 
 def _chart_success_rate(flat: list[dict[str, Any]]) -> None:
@@ -74,7 +111,8 @@ def _chart_success_rate(flat: list[dict[str, Any]]) -> None:
         bucket = status if status in ("completed", "failed") else "pending"
         counts[model][bucket] += 1
 
-    models = sorted(counts)
+    completed = _completed_runs(flat)
+    models = _order_models_by_mean_cost(completed, counts.keys())
     fig = go.Figure()
     colors = {"completed": "#2ecc71", "failed": "#e74c3c", "pending": "#95a5a6"}
     for status in ("completed", "failed", "pending"):
@@ -130,7 +168,9 @@ def _chart_avg_duration_by_job(completed: list[dict[str, Any]]) -> None:
         )
     )
 
-    models = sorted({r["model"] for r in runs_with_dur})
+    models = _order_models_by_mean_cost(
+        completed, {r["model"] for r in runs_with_dur}
+    )
     palette = px.colors.qualitative.Set2
     model_color = {m: palette[i % len(palette)] for i, m in enumerate(models)}
 
@@ -196,7 +236,7 @@ def _chart_token_usage(completed: list[dict[str, Any]]) -> None:
         sums[m]["output"] += r["output_tokens"] or 0
         run_counts[m] += 1
 
-    models = sorted(sums)
+    models = _order_models_by_mean_cost(completed, sums.keys())
     fig = go.Figure()
     colors = {"Input": "#3498db", "Reasoning": "#e67e22", "Output": "#2ecc71"}
     for label, key in [("Input", "input"), ("Reasoning", "reasoning"), ("Output", "output")]:
@@ -220,6 +260,51 @@ def _chart_token_usage(completed: list[dict[str, Any]]) -> None:
     st.plotly_chart(fig, width="stretch")
 
 
+def _chart_cost_by_model(completed: list[dict[str, Any]]) -> None:
+    """Bar per model: mean total_cost (USD) per completed run."""
+    runs_with_cost = [r for r in completed if r.get("total_cost") is not None]
+    if not runs_with_cost:
+        return
+
+    from collections import defaultdict
+
+    sums: dict[str, float] = defaultdict(float)
+    counts: dict[str, int] = defaultdict(int)
+    for r in runs_with_cost:
+        m = r["model"]
+        c = r["total_cost"]
+        try:
+            sums[m] += float(c)
+        except (TypeError, ValueError):
+            continue
+        counts[m] += 1
+
+    models = _order_models_by_mean_cost(completed, sums.keys())
+    if not models:
+        return
+
+    means = [sums[m] / counts[m] for m in models]
+    fig = go.Figure(
+        go.Bar(
+            x=models,
+            y=means,
+            marker_color="#9b59b6",
+        )
+    )
+    fig.update_layout(
+        xaxis_title="Model",
+        yaxis_title="USD (avg per run)",
+        height=_CHART_HEIGHT,
+        **_base_plotly_layout(),
+    )
+    _streamlit_chart_heading(
+        "Average Cost per Run by Model",
+        "Sum of per-turn costs from the chat transcript (provider-reported), averaged over "
+        "completed runs—compare spend alongside token charts.",
+    )
+    st.plotly_chart(fig, width="stretch")
+
+
 def _chart_duration_per_job(completed: list[dict[str, Any]]) -> None:
     """Grouped bar: chat duration per job, comparing models side-by-side."""
     runs_with_dur = [r for r in completed if r["chat_duration"] and r["chat_duration"] > 0]
@@ -233,7 +318,9 @@ def _chart_duration_per_job(completed: list[dict[str, Any]]) -> None:
         by_job_model[r["job_id"]][r["model"]].append(r["chat_duration"])
 
     jobs = sorted(by_job_model)
-    all_models = sorted({r["model"] for r in runs_with_dur})
+    all_models = _order_models_by_mean_cost(
+        completed, {r["model"] for r in runs_with_dur}
+    )
 
     fig = go.Figure()
     for model in all_models:
@@ -277,7 +364,7 @@ def _chart_tool_heatmap(completed: list[dict[str, Any]]) -> None:
     if not tool_sums:
         return
 
-    models = sorted(tool_sums)
+    models = _order_models_by_mean_cost(completed, tool_sums.keys())
     all_tools = sorted({t for m in tool_sums for t in tool_sums[m]})
     if not all_tools:
         return
@@ -330,6 +417,9 @@ def _chart_duration_vs_tokens(completed: list[dict[str, Any]]) -> None:
     if not points:
         return
 
+    model_order = _order_models_by_mean_cost(
+        completed, {p["model"] for p in points}
+    )
     fig = px.scatter(
         points,
         x="total_tokens",
@@ -340,6 +430,7 @@ def _chart_duration_vs_tokens(completed: list[dict[str, Any]]) -> None:
             "total_tokens": "Total Tokens (input + output)",
             "chat_duration": "Duration (seconds)",
         },
+        category_orders={"model": model_order},
     )
     fig.update_traces(marker=dict(size=10, line=dict(width=1, color="white")))
     fig.update_layout(
@@ -377,6 +468,7 @@ def render_charts(rows: list[DashboardRow]) -> None:
     with col_right2:
         _chart_duration_vs_tokens(completed)
 
+    _chart_cost_by_model(completed)
     _chart_duration_per_job(completed)
     _chart_tool_heatmap(completed)
 

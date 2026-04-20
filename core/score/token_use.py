@@ -13,6 +13,7 @@ def evaluate_token_use(context: dict, metadata: BenchmarkMetadata) -> None:
     - input_tokens
     - reasoning tokens from output_token_details["reasoning"]
     - output_tokens (excluding reasoning tokens)
+    - total_cost from response_metadata["token_usage"]["cost"] (when present)
     """
 
     chat_result = metadata.chat_result or {}
@@ -22,6 +23,7 @@ def evaluate_token_use(context: dict, metadata: BenchmarkMetadata) -> None:
     total_input_tokens = 0
     total_output_tokens = 0
     total_reasoning_tokens = 0
+    total_cost = 0.0
 
     for message in messages:
         if message.get("type") != "ai":
@@ -38,6 +40,15 @@ def evaluate_token_use(context: dict, metadata: BenchmarkMetadata) -> None:
         total_output_tokens += output_tokens
         total_reasoning_tokens += reasoning_tokens
 
+        token_usage = (message.get("response_metadata") or {}).get("token_usage") or {}
+        cost = token_usage.get("cost")
+        if cost is not None:
+            try:
+                total_cost += float(cost)
+            except (TypeError, ValueError):
+                pass
+
     metadata.scores["input_tokens"] = total_input_tokens
     metadata.scores["reasoning_tokens"] = total_reasoning_tokens
     metadata.scores["output_tokens"] = total_output_tokens
+    metadata.scores["total_cost"] = total_cost

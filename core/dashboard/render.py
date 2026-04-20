@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-from itertools import groupby
+from collections import defaultdict
 from typing import Any
 
 import streamlit as st
 
-from .charts import render_charts
+from .charts import (
+    _completed_runs,
+    _flatten_runs,
+    _order_models_by_mean_cost,
+    render_charts,
+)
 from .models import DashboardRow, DashboardSummary
 
 
@@ -79,7 +84,11 @@ def render_dashboard(summary: DashboardSummary) -> None:
         )
         return
 
-    model_options = sorted({row.model for row in summary.rows})
+    flat_all = _flatten_runs(summary.rows)
+    completed_all = _completed_runs(flat_all)
+    model_options = _order_models_by_mean_cost(
+        completed_all, {row.model for row in summary.rows}
+    )
     selected_models = st.multiselect(
         "Models",
         options=model_options,
@@ -129,10 +138,16 @@ def render_dashboard(summary: DashboardSummary) -> None:
 
     score_keys = _collect_score_keys(filtered_rows)
 
-    filtered_sorted = sorted(filtered_rows, key=lambda r: (r.model, r.job_id))
-    for model, group_iter in groupby(filtered_sorted, key=lambda r: r.model):
+    flat_filtered = _flatten_runs(filtered_rows)
+    completed_filtered = _completed_runs(flat_filtered)
+    by_model: dict[str, list[DashboardRow]] = defaultdict(list)
+    for row in filtered_rows:
+        by_model[row.model].append(row)
+    for model in _order_models_by_mean_cost(
+        completed_filtered, by_model.keys()
+    ):
         st.subheader(model)
-        for row in group_iter:
+        for row in sorted(by_model[model], key=lambda r: r.job_id):
             _render_job_section(row, score_keys)
 
 

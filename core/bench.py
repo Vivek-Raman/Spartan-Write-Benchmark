@@ -43,11 +43,16 @@ def run_benchmarks(context: dict) -> None:
             for run_index in range(iterations):
                 for attempt in range(1, _MAX_BENCHMARK_ATTEMPTS + 1):
                     if attempt > 1:
-                        click.echo(
-                            f"    + Attempt {attempt}/{_MAX_BENCHMARK_ATTEMPTS} "
-                            f"after {_RETRY_SLEEP_SEC}s sleep..."
-                        )
-                        time.sleep(_RETRY_SLEEP_SEC)
+                        if do_scoring_only:
+                            click.echo(
+                                f"    + Attempt {attempt}/{_MAX_BENCHMARK_ATTEMPTS}..."
+                            )
+                        else:
+                            click.echo(
+                                f"    + Attempt {attempt}/{_MAX_BENCHMARK_ATTEMPTS} "
+                                f"after {_RETRY_SLEEP_SEC}s sleep..."
+                            )
+                            time.sleep(_RETRY_SLEEP_SEC)
                         if not do_scoring_only:
                             prepare_single_run_workspace(source, data_dir, run_index)
                     ok = asyncio.run(
