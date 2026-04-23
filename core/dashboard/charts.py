@@ -98,6 +98,26 @@ def _order_models_by_mean_cost(
     )
 
 
+def _ols_regression_line_segment(
+    xs: list[float], ys: list[float]
+) -> tuple[float, float, float, float] | None:
+    """End points ``(x0, y0)`` to ``(x1, y1)`` of the OLS line over ``(xs, ys)`` in x-range."""
+    n = len(xs)
+    if n < 2 or len(ys) != n:
+        return None
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+    sxx = sum((x - mean_x) ** 2 for x in xs)
+    if sxx <= 0:
+        return None
+    sxy = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True))
+    slope = sxy / sxx
+    intercept = mean_y - slope * mean_x
+    x0, x1 = min(xs), max(xs)
+    y0, y1 = slope * x0 + intercept, slope * x1 + intercept
+    return (x0, y0, x1, y1)
+
+
 def _chart_success_rate(flat: list[dict[str, Any]]) -> None:
     """Grouped bar: completed / failed / pending counts per model."""
     if not flat:
@@ -174,29 +194,27 @@ def _chart_avg_duration_by_job(completed: list[dict[str, Any]]) -> None:
     palette = px.colors.qualitative.Set2
     model_color = {m: palette[i % len(palette)] for i, m in enumerate(models)}
 
-    sx: list[str] = []
-    sy: list[float] = []
-    sc: list[str] = []
-    stext: list[str] = []
-    for j in jobs:
-        for row in by_job[j]:
-            sx.append(j)
-            sy.append(float(row["chat_duration"]))
-            m = row["model"]
-            sc.append(model_color[m])
-            stext.append(m)
-
-    fig.add_trace(
-        go.Scatter(
-            x=sx,
-            y=sy,
-            mode="markers",
-            marker=dict(size=8, color=sc, line=dict(width=1, color="white")),
-            text=stext,
-            hovertemplate="%{text}<br>%{y:.1f} s<extra></extra>",
-            showlegend=False,
+    for m in models:
+        sx_m: list[str] = []
+        sy_m: list[float] = []
+        for j in jobs:
+            for row in by_job[j]:
+                if row["model"] != m:
+                    continue
+                sx_m.append(j)
+                sy_m.append(float(row["chat_duration"]))
+        if not sx_m:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=sx_m,
+                y=sy_m,
+                mode="markers",
+                name=m,
+                marker=dict(size=8, color=model_color[m], line=dict(width=1, color="white")),
+                hovertemplate=f"{m}<br>%{{y:.1f}} s<extra></extra>",
+            )
         )
-    )
 
     fig.update_layout(
         xaxis_title="Job",
@@ -208,8 +226,8 @@ def _chart_avg_duration_by_job(completed: list[dict[str, Any]]) -> None:
     _streamlit_chart_heading(
         "Average Chat Duration by Job",
         "Each bar is the mean duration over every completed run for that benchmark job "
-        "(all models). Points are individual runs—hover for model—so you see task hardness "
-        "and spread instead of one model-level average that mixes different job mixes.",
+        "(all models). Points are individual runs (legend and hover show model) so you see "
+        "task hardness and spread instead of one model-level average that mixes different job mixes.",
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -399,8 +417,8 @@ def _chart_tool_heatmap(completed: list[dict[str, Any]]) -> None:
 
 
 def _chart_duration_vs_tokens(completed: list[dict[str, Any]]) -> None:
-    """Scatter: total tokens vs chat_duration, colored by model."""
-    points = []
+    """Scatter: total tokens vs chat_duration, colored by model, with OLS line per model."""
+    points: list[dict[str, Any]] = []
     for r in completed:
         dur = r["chat_duration"]
         inp = r["input_tokens"]
@@ -420,28 +438,69 @@ def _chart_duration_vs_tokens(completed: list[dict[str, Any]]) -> None:
     model_order = _order_models_by_mean_cost(
         completed, {p["model"] for p in points}
     )
-    fig = px.scatter(
-        points,
-        x="total_tokens",
-        y="chat_duration",
-        color="model",
-        hover_data=["job_id"],
-        labels={
-            "total_tokens": "Total Tokens (input + output)",
-            "chat_duration": "Duration (seconds)",
-        },
-        category_orders={"model": model_order},
-    )
-    fig.update_traces(marker=dict(size=10, line=dict(width=1, color="white")))
+    palette = px.colors.qualitative.Plotly
+    model_color = {m: palette[i % len(palette)] for i, m in enumerate(model_order)}
+
+    by_model: list[tuple[str, list[dict[str, Any]]]] = []
+    for m in model_order:
+        mpts = [p for p in points if p["model"] == m]
+        if mpts:
+            by_model.append((m, mpts))
+
+    fig = go.Figure()
+    for m, mpts in by_model:
+        xs = [float(p["total_tokens"]) for p in mpts]
+        ys = [float(p["chat_duration"]) for p in mpts]
+        col = model_color[m]
+        seg = _ols_regression_line_segment(xs, ys)
+        if seg is not None:
+            x0, y0, x1, y1 = seg
+            fig.add_trace(
+                go.Scatter(
+                    x=[x0, x1],
+                    y=[y0, y1],
+                    mode="lines",
+                    name=m,
+                    showlegend=False,
+                    legendgroup=m,
+                    line=dict(color=col, width=1.25, dash="dash"),
+                    hoverinfo="skip",
+                )
+            )
+    for m, mpts in by_model:
+        xs = [float(p["total_tokens"]) for p in mpts]
+        ys = [float(p["chat_duration"]) for p in mpts]
+        col = model_color[m]
+        job_ids = [p["job_id"] for p in mpts]
+        fig.add_trace(
+            go.Scatter(
+                x=xs,
+                y=ys,
+                mode="markers",
+                name=m,
+                legendgroup=m,
+                marker=dict(size=10, color=col, line=dict(width=1, color="white")),
+                text=job_ids,
+                hovertemplate=(
+                    f"<b>{m}</b><br>"
+                    "Total tokens (input + output): %{x:,.0f}<br>"
+                    "Duration (seconds): %{y:.1f}<br>"
+                    "job_id: %{text}<extra></extra>"
+                ),
+            )
+        )
     fig.update_layout(
+        xaxis_title="Total Tokens (input + output)",
+        yaxis_title="Duration (seconds)",
         height=_CHART_HEIGHT,
         title=dict(text=""),
         **_base_plotly_layout(),
     )
     _streamlit_chart_heading(
         "Chat Duration vs Total Tokens",
-        "Relates time to workload size (tokens); outliers off the usual trend can mean "
-        "inefficient tool use, provider slowness, or jobs that are heavy for reasons beyond token count.",
+        "Relates time to workload size (tokens). Dashed lines are ordinary least squares "
+        "per model; outliers off the usual trend can mean inefficient tool use, provider "
+        "slowness, or jobs that are heavy for reasons beyond token count.",
     )
     st.plotly_chart(fig, width="stretch")
 
