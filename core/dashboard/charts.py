@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Iterable
 from typing import Any
 
@@ -10,6 +11,9 @@ import streamlit as st
 from .models import DashboardRow, DashboardRun
 
 _CHART_HEIGHT = 400
+
+# Benchmark job whose user prompt asks for generated prose while exercising policy tension.
+ACADEMIC_INTEGRITY_PROBE_JOB = "012-fail-to-generate-content"
 
 
 def _base_plotly_layout() -> dict[str, Any]:
@@ -364,10 +368,91 @@ def _chart_duration_per_job(completed: list[dict[str, Any]]) -> None:
     st.plotly_chart(fig, width="stretch")
 
 
+def _figure_tool_usage_single_job(
+    completed: list[dict[str, Any]], job_id: str
+) -> go.Figure | None:
+    """Grouped bar chart: mean tool calls per run for ``job_id`` only. Returns None if no runs."""
+    runs = [r for r in completed if r["job_id"] == job_id]
+    if not runs:
+        return None
+
+    tool_sums: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    run_counts: dict[str, int] = defaultdict(int)
+
+    for r in runs:
+        m = r["model"]
+        run_counts[m] += 1
+        tu = r["tool_use"]
+        if isinstance(tu, dict):
+            for tool_name, count in tu.items():
+                tool_sums[m][tool_name] += count
+
+    model_set = {r["model"] for r in runs}
+    models = _order_models_by_mean_cost(completed, model_set)
+    all_tools = sorted({t for m in tool_sums for t in tool_sums[m]})
+
+    palette = px.colors.qualitative.Plotly
+    fig = go.Figure()
+
+    if not all_tools:
+        fig.add_trace(
+            go.Bar(
+                name="logged tool-role messages",
+                x=models,
+                y=[0.0] * len(models),
+                marker_color="#bdc3c7",
+            )
+        )
+    else:
+        for i, tool in enumerate(all_tools):
+            vals = []
+            for m in models:
+                rc = run_counts[m] or 1
+                vals.append(tool_sums[m].get(tool, 0) / rc)
+            fig.add_trace(
+                go.Bar(
+                    name=tool,
+                    x=models,
+                    y=vals,
+                    marker_color=palette[i % len(palette)],
+                )
+            )
+
+    fig.update_layout(
+        barmode="group",
+        xaxis_title="Model",
+        yaxis_title="Avg tool calls per run",
+        height=_CHART_HEIGHT + 80,
+        xaxis_tickangle=-30,
+        font=dict(size=12),
+        margin=dict(l=48, r=24, t=48, b=160),
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.28,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=10),
+        ),
+    )
+    return fig
+
+
+def _chart_tool_use_single_job(completed: list[dict[str, Any]], job_id: str) -> None:
+    fig = _figure_tool_usage_single_job(completed, job_id)
+    if fig is None:
+        return
+    _streamlit_chart_heading(
+        "Tool Usage for Academic-Integrity Probe (single job)",
+        f"Restricted to `{job_id}`: user-visible prompt asks to write related work; compare "
+        "file-mutation tools (e.g. write/edit) versus reads or no tool traffic. "
+        "Completion here is technical—it does not measure policy compliance.",
+    )
+    st.plotly_chart(fig, width="stretch")
+
+
 def _chart_tool_heatmap(completed: list[dict[str, Any]]) -> None:
     """Heatmap: models x tool names, values = avg calls per run."""
-    from collections import defaultdict
-
     tool_sums: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     run_counts: dict[str, int] = defaultdict(int)
 
@@ -530,5 +615,6 @@ def render_charts(rows: list[DashboardRow]) -> None:
     _chart_cost_by_model(completed)
     _chart_duration_per_job(completed)
     _chart_tool_heatmap(completed)
+    _chart_tool_use_single_job(completed, ACADEMIC_INTEGRITY_PROBE_JOB)
 
     st.divider()
